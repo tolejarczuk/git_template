@@ -1,0 +1,45 @@
+#!/bin/bash
+
+COMMIT_MSG_FILE=$1
+COMMIT_SOURCE=$2
+SHA1=$3
+
+BRANCHES="`git branch -a --format=\"%(refname)\"`"
+GITFLOW=0
+DFS=0
+
+# Only continue for the DFS branching model. If it is gitflow stop right away as other rules apply.
+for BRANCH in $BRANCHES
+do
+	if [ $BRANCH = "develop" ] || [ $BRANCH = "refs/heads/develop" ];
+	then
+		GITFLOW=1
+	fi
+	
+	if [[ $BRANCH =~ "stable/".* ]]
+	then
+		DFS=1
+	fi
+done
+
+if [ $GITFLOW = 1 ] || [ $DFS = 0 ]
+then
+	exit 0
+fi
+
+# Space-separated list of branches that should not be committed on
+current_branch=$(git rev-parse --abbrev-ref HEAD)
+
+# set nocasematch option
+shopt -s nocasematch
+
+# Check if we want to push to a branch we are not allowed to
+if [[ $current_branch =~ ^(.*stable\/[[:digit:]]{2}\.90\..*|.*release\/[[:digit:]]{2}\.[0-8][[:digit:]]\..*|.*patch\/[[:digit:]]{2}\.[[:digit:]]{2}\..*|master)$ ]]; then
+   while IFS='' read -r line || [[ -n "$line" ]]; do
+      if [[ $line =~ ^.*skiphook.* ]]; then
+         exit 0
+      fi
+   done < "$COMMIT_MSG_FILE"
+   echo -e "$current_branch is protected!\nIf you are an admin, you can skip this hook by adding \"skiphook\" to your commit msg"
+   exit 1
+fi

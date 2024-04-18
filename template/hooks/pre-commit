@@ -1,15 +1,55 @@
-#!/bin/bash -eu
-GIT_COMMON_DIR=$(git rev-parse --git-common-dir)
-export GIT_COMMON_DIR
-test -f "$GIT_COMMON_DIR"/CHERRY_PICK_HEAD && exit 0
-for enabled_plugin in $(git config --get-all hooks.enabled-plugins)
-do
-	if [ -f "$GIT_COMMON_DIR/hooks/$enabled_plugin/pre-commit" ]
-	then
+#!/bin/bash
+# Space-separated list of branches that should not be committed on
+# https://stackoverflow.com/questions/7812142/how-to-toggle-cr-lf-in-gnu-screen
+current_branch=$(git rev-parse --abbrev-ref HEAD)
 
-		if ! "$GIT_COMMON_DIR/hooks/$enabled_plugin/pre-commit"
-		then
-			exit 1
-		fi
-	fi
-done
+# This script verifies if a list of "undesired" words are presented in the files you are intended to commit such console 
+# output, debugging information or keys/tokens/passwords
+# If an entry in the DONTCARELIST is matched this script stops checking that file.
+# Put this file into your .git/hooks folder and set as executable (chmod +x pre-commit)
+# If you want to skip the hook just add the --no-verify: git commit --no-verify
+# ---------------------------------------------
+
+# Modify this
+# LIST='list\|of\|words\|splitted\|by\|slash\|and\|pipe'
+LIST="(?i)DO.{0,1}NOT.{0,1}SUBMIT|TRACE_DNS|logDNS|JLOG_DNS"
+commitallowed=1
+timestamp=`date +%s%N`;
+tempfile=~/gitdiff$timestamp.txt
+x="";
+
+`touch $tempfile`;
+$(git --no-pager diff --staged --diff-filter=MRA -U0 > $tempfile);
+
+# the EXCLUDE_FROM_DO_NOT_SUBMIT may be on before the line to ignore
+# check of occurance of values from $LIST
+if x=$(sed -n '/^[^+|diff]/ d ;/exclude.\{0,1\}from.\{0,1\}do.\{0,1\}not.\{0,1\}submit/I {N;d;};p' $tempfile | grep -P $LIST); then
+
+   commitallowed=0
+   
+   echo "#######################################################################################"
+   echo "# A file contains one of the words in your DONOTSUBMIT hook. Please verify your code. #"
+   echo "#######################################################################################"
+   x=${x//$'\n'/} # removes all new lines
+   
+   # create an array with '+' as separator   
+   oIFS="$IFS"; IFS="+"; declare -a files=($x); IFS="$oIFS"; unset oIFS;
+   for x in "${files[@]}";do
+        if [ ${#x} -gt  0 ]; then
+            # list file names containing $x
+	        awk  -v RS='diff --git a/' -v awkvar="$x" '$0~awkvar{print "In file: " $1}' $tempfile; 
+	        echo "    We found: => $x";
+	    fi
+   done
+   
+fi
+
+`rm $tempfile`
+
+if [[ "$commitallowed" -eq "1" ]] ; then
+   exit 0
+else
+   exit 1
+fi
+
+exit 
